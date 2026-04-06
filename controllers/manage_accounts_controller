@@ -1,0 +1,84 @@
+import 'package:get/get.dart';
+import 'package:bridgeapp/src/repository/remove_account_repo.dart';
+import 'package:bridgeapp/src/features/authentication/screens/accounts/repositories/banking_repository/balance_repository.dart';
+import 'package:bridgeapp/src/common_widgets/snackbar_service.dart';
+
+class ManageAccountsController extends GetxController {
+  final RemoveAccountRepo _removeRepo = Get.find();
+  final BalanceRepository _balanceRepo = Get.find();
+
+  /// UI-ready linked accounts
+  final RxList<LinkedAccount> accounts = <LinkedAccount>[].obs;
+
+  /// Selected account IDs
+  final RxSet<String> selectedAccountIds = <String>{}.obs;
+
+  RxBool isDeleting = false.obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+    _loadAccounts();
+  }
+
+  void _loadAccounts() {
+    // 🔑 Adapt this mapping to your real BalanceRepository structure
+    final rawAccounts = _balanceRepo.accounts; // RxList<Map>
+
+    accounts.assignAll(
+      rawAccounts.map((account) {
+        return LinkedAccount(
+          accountID: account['AccountID'],
+          name: account['AccountName'],
+          institution: account['Institution'],
+          balance: account['Balance'],
+          type: account['Type'],
+          mask: account['Mask'],
+        );
+      }),
+    );
+  }
+
+  /// Toggle selection
+  void toggleSelection(String accountId) {
+    selectedAccountIds.contains(accountId)
+        ? selectedAccountIds.remove(accountId)
+        : selectedAccountIds.add(accountId);
+  }
+
+  /// Remove selected accounts safely
+  Future<void> removeSelectedAccounts() async {
+    if (selectedAccountIds.isEmpty) return;
+
+    isDeleting.value = true;
+
+    final failedDeletes = <String>[];
+
+    for (final id in selectedAccountIds) {
+      try {
+        await _removeRepo.removeaccount(id);
+      } catch (_) {
+        failedDeletes.add(id);
+      }
+    }
+
+    // Remove only successfully deleted accounts
+    accounts.removeWhere(
+      (account) =>
+          selectedAccountIds.contains(account.accountID) &&
+          !failedDeletes.contains(account.accountID),
+    );
+
+    selectedAccountIds.clear();
+    isDeleting.value = false;
+
+    if (failedDeletes.isNotEmpty) {
+      SnackbarService.show(
+        'Some accounts could not be removed. Try again.',
+        isError: true,
+      );
+    } else {
+      SnackbarService.show('Account(s) removed successfully');
+    }
+  }
+}
